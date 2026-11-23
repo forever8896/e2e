@@ -1,0 +1,94 @@
+name: Shake iOS evidence
+
+# Live evidence for `device.shake()` on an iOS simulator. Lives on the evidence branch only.
+on:
+  push:
+    branches: [shake-ios-evidence]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shake:
+    name: device.shake() on an iOS simulator (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Select the newest installed Xcode
+        run: |
+          NEWEST="$(ls -d /Applications/Xcode_[0-9]*.app | grep -vi beta | sort -V | tail -1)"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          sw_vers
+          xcodebuild -version
+          git log --oneline -2
+      - name: Install and build core, e2e, and the mobile engine
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @e2e-dev/core run build
+          pnpm --filter e2e run build
+          pnpm --filter @e2e-dev/mobile run build
+          node -p "'agent-device ' + require('./packages/mobile/node_modules/agent-device/package.json').version"
+      - name: Boot an iPhone simulator
+        run: |
+          set -euo pipefail
+          UDID="$(xcrun simctl list devices available -j | node -e '
+            const d = JSON.parse(require("node:fs").readFileSync(0, "utf8")).devices;
+            const ios = Object.entries(d).filter(([r]) => r.includes("SimRuntime.iOS-")).sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }));
+            const phones = ios.flatMap(([runtime, list]) => list.filter((x) => x.name.startsWith("iPhone")).map((x) => ({ ...x, runtime })));
+            const pick = phones.find((x) => /Pro$/.test(x.name)) ?? phones[0];
+            if (!pick) process.exit(1);
+            console.error(`Selected ${pick.name} (${pick.udid}) on ${pick.runtime}`);
+            process.stdout.write(pick.udid);
+          ')"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+      - name: Build and install the shake counter app
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/ShakeCount.app"
+          mkdir -p "$APP"
+          xcrun -sdk iphonesimulator swiftc -parse-as-library \
+            -target "$(uname -m)-apple-ios17.0-simulator" \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -module-name ShakeCount evidence/ios-shake-app/main.swift -o "$APP/ShakeCount"
+          cp evidence/ios-shake-app/Info.plist "$APP/Info.plist"
+          codesign --force --sign - "$APP"
+          xcrun simctl install "$UDID" "$APP"
+      - name: Link the built packages into the test project
+        working-directory: evidence/ios-shake
+        run: |
+          mkdir -p node_modules/@e2e-dev
+          ln -s "$GITHUB_WORKSPACE/packages/e2e" node_modules/e2e
+          ln -s "$GITHUB_WORKSPACE/packages/mobile" node_modules/@e2e-dev/mobile
+      # The app's own counter is the proof. The screen read needs agent-device's XCTest runner,
+      # which can overrun on a hosted runner, so that test runs on its own and does not fail the job.
+      - name: device.shake() against the app's own counter
+        working-directory: evidence/ios-shake
+        run: node node_modules/e2e/dist/cli/bin.js run --grep 'one shake event'
+      - name: device.shake() read back from the screen
+        continue-on-error: true
+        working-directory: evidence/ios-shake
+        run: node node_modules/e2e/dist/cli/bin.js run --grep 'screen shows'
+      - name: Screenshot
+        if: always()
+        run: mkdir -p evidence-out && xcrun simctl io "$UDID" screenshot evidence-out/after.png
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shake-ios-evidence-${{ matrix.os }}
+          path: |
+            evidence-out
+            evidence/ios-shake/.e2e
