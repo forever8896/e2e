@@ -192,6 +192,13 @@ export interface Device {
   home(): Promise<void>;
   /** Navigates back once (in-app back). */
   back(): Promise<void>;
+  /**
+   * Shakes the device once: the simulator's shake gesture on iOS, a swing of
+   * the accelerometer on an Android emulator. A physical device is
+   * `UNSUPPORTED_CAPABILITY`. It resolves once the shake is sent, so assert
+   * on what the app shows next.
+   */
+  shake(): Promise<void>;
   /** Accepts or dismisses the visible system alert. */
   alert(action: 'accept' | 'dismiss'): Promise<void>;
   /**
@@ -376,6 +383,9 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     async back() {
       await surface.screenCommand('device.back', (client) => client.command.back({ ...surface.settleOptions }), context.signal);
     },
+    async shake() {
+      await surface.screenCommand('device.shake', (client) => client.command.shake(surface.selection()), context.signal);
+    },
     async alert(action) {
       await surface.screenCommand('device.alert', (client) => client.command.alert({ ...surface.selection(), action }), context.signal);
     },
@@ -420,6 +430,7 @@ export function createDeviceFixture(surface: AgentDeviceSurface, context: Engine
     foregroundApp: action,
     home: action,
     back: action,
+    shake: action,
     alert: { ...action, label: (value) => value },
     dismissKeyboard: action,
     isKeyboardShown: action,

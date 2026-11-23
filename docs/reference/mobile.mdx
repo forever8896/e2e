@@ -252,7 +252,7 @@ mobile({ platform: 'ios', transition: 800 }); // default: 500
 
 If the control changes during the wait, the action finds it again within its timeout before acting.
 
-`back`, `home`, `alert`, `dismissKeyboard`, `setOrientation`, and `fold` on
+`back`, `home`, `shake`, `alert`, `dismissKeyboard`, `setOrientation`, and `fold` on
 [`device`](#device) change the screen, so they count as actions for this
 budget the way a tap does. A control that arrives with the screen they reveal
 waits out the budget before the next action lands on it.
@@ -457,6 +457,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`viewport`](#viewport) | `Promise<ViewportSize>` |
 | [`home`](#home) | `Promise<void>` |
 | [`back`](#back) | `Promise<void>` |
+| [`shake`](#shake) | `Promise<void>` |
 | [`alert`](#alert) | `Promise<void>` |
 | [`dismissKeyboard`](#dismisskeyboard) | `Promise<void>` |
 | [`isKeyboardShown`](#iskeyboardshown) | `Promise<boolean>` |
@@ -464,7 +465,7 @@ test('offline banner', { platforms: ['android'] }, async ({ app, device, screen 
 | [`setClipboard`](#setclipboard) | `Promise<void>` |
 
 Every async method is a recorded step named `device.<method>`, bounded by
-`config.actionTimeout`. `back`, `home`, `alert`, `dismissKeyboard`,
+`config.actionTimeout`. `back`, `home`, `shake`, `alert`, `dismissKeyboard`,
 `setOrientation`, and `fold` count as actions for the
 [`transition`](#transition) budget. Each entry below shows its member's
 declaration; the types they use are under [Types](#device-fixture).
@@ -963,6 +964,29 @@ back(): Promise<void>;
 ```ts
 await device.back();
 ```
+
+#### `shake`
+
+```ts
+/**
+ * Shakes the device once: the simulator's shake gesture on iOS, a swing of
+ * the accelerometer on an Android emulator. A physical device is
+ * `UNSUPPORTED_CAPABILITY`. It resolves once the shake is sent, so assert
+ * on what the app shows next.
+ */
+shake(): Promise<void>;
+```
+
+```ts
+await device.shake();
+await expect(screen.getByText('Report a problem')).toBeVisible();
+```
+
+An app reads the shake the way it reads one on a real device: a React Native dev build opens its dev menu, and an app with a shake handler runs it.
+
+| Throws | When |
+| --- | --- |
+| `UNSUPPORTED_CAPABILITY` | The device is a physical one, or one a device provider hosts that cannot be shaken. |
 
 #### `alert`
 

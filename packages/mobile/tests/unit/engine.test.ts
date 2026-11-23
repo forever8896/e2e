@@ -2564,7 +2564,7 @@ describe('device fixture', () => {
     expect(h.fake.lastArgs('interactions.scroll')).toEqual({ direction: 'down', postGestureStabilization: false });
   });
 
-  it('counts a back, home, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
+  it('counts a back, home, shake, alert, keyboard, rotation, or fold as an action, so a control that arrives with it waits out the transition budget', async () => {
     autoAdvanceTimers();
     const h = harness({ transition: 120 });
     await openAttempt(h);
@@ -2573,6 +2573,7 @@ describe('device fixture', () => {
     for (const change of [
       () => device.back(),
       () => device.home(),
+      () => device.shake(),
       () => device.alert('accept'),
       () => device.dismissKeyboard(),
       () => device.setOrientation('landscape-left'),
@@ -2701,6 +2702,7 @@ describe('device fixture', () => {
     expect(await device.foregroundApp()).toEqual({ name: 'Settings', bundleId: 'com.apple.Preferences' });
     await device.home();
     await device.back();
+    await device.shake();
     await device.alert('accept');
     await device.dismissKeyboard();
     expect(await device.clipboard()).toBe('pasted');
@@ -2721,6 +2723,7 @@ describe('device fixture', () => {
       ['command.appState', {}],
       ['command.home', { platform: 'ios' }],
       ['command.back', { settle: true, settleQuietMs: 150 }],
+      ['command.shake', { platform: 'ios' }],
       ['command.alert', { platform: 'ios', action: 'accept' }],
       ['command.keyboard', { action: 'dismiss' }],
       ['command.clipboard', { platform: 'ios', action: 'read' }],
@@ -3078,6 +3081,20 @@ describe('device fixture', () => {
     const count = android.fake.calls.length;
     await expect(fixture(android).clearKeychain()).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
     expect(android.fake.calls.length).toBe(count);
+  });
+
+  it('shakes the selected simulator or emulator, and maps a device that cannot be shaken to UNSUPPORTED_CAPABILITY', async () => {
+    const android = harness({ platform: 'android', device: 'emulator-5554', bundleId: 'com.example.app' });
+    await openAttempt(android);
+    await expect(fixture(android).shake()).resolves.toBeUndefined();
+    expect(android.fake.lastArgs('command.shake')).toEqual({ platform: 'android', serial: 'emulator-5554' });
+
+    const phone = harness({ platform: 'android', device: 'R58M123ABC', bundleId: 'com.example.app' });
+    await openAttempt(phone);
+    phone.fake.respond('command.shake', () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'shake is not supported on this device');
+    });
+    await expect(fixture(phone).shake()).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' });
   });
 
   it('folds an iOS simulator or an Android emulator through the one device command, and maps a hingeless device to UNSUPPORTED_CAPABILITY', async () => {
